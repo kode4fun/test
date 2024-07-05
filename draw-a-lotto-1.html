@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>幸运大抽奖 —— CSS动画实现</title>
+	<link rel="stylesheet" href="main.css">
+</head>
+<body>
+	<div class="main">
+		<div class="row scroller-container" data-state="stopped">
+		</div>
+		<div class="row" style="margin-top:20px">
+			<button id="draw" class="btnHighlight">试试手气</button>
+		</div>
+	</div>
+	<script>
+		const $ = (sel)=>document.querySelector(sel);
+		const randDigit = ()=>parseInt(Math.random()*10);
+
+		function DigitScrollerFactory() {
+			const createBox = Symbol.for('createBox');
+			const moveLast2Frist = Symbol.for('moveLast2Frist');
+			const resumeScroll = Symbol.for('resumeScroll');
+			class DigitScroller {
+				constructor() {
+					this.outer = $('.scroller-container').appendChild(this[createBox]());
+					this.inner = this.outer.querySelector('.box-inner');
+					this.endState = null;
+					// this.addIntersectionObserver();
+				}
+
+				[createBox]() { // 创建数字 div
+					const outer = document.createElement('DIV');
+					outer.classList.add('box-wrapper');
+					outer.innerHTML = `
+						<div class="box-inner"  style="top:-100%;">
+							<div class="digit">${randDigit()}</div>
+							<div class="digit"></div>
+						</div>
+					`;
+					return outer;
+				}
+
+				[moveLast2Frist](n) { // 移动最有一个数字 div 到第一个
+					const first = this.inner.querySelector('.digit:first-child');
+					const last = this.inner.querySelector('.digit:last-child');
+					last.innerText = (n===null||n===undefined)?randDigit():n;
+					this.inner.insertBefore(last,first); // 移动 last 到 first 之前
+				}
+
+				[resumeScroll]() { // 设置最后一个数字并继续滚动至于下一轮
+					this[moveLast2Frist](this.endState?.digit);
+					this.inner.classList.remove('scrolldown');
+					// requestAnimationFrame 注册的回调函数是下一次重绘前，所以我们需要调用两次，相当于在中间插入了一个空隙专门用来让删除动画效果生效，然后紧接着下一次重绘重新触发动画
+					requestAnimationFrame(()=> // https://blog.csdn.net/weixin_33838896/article/details/119374212
+						requestAnimationFrame(()=>this.inner.classList.add('scrolldown'))
+					);
+					const first = this.inner.querySelector('.digit:first-child');
+					if(this.endState) // 设置了结束状态
+						this.inner.onanimationend = () => {  // 本次滚动结束后
+							this[moveLast2Frist]();
+							this.inner.classList.remove('scrolldown');
+							this.endState.resolve();
+							this.endState = null;
+						}
+				}
+
+				start(duration='200ms') {
+					this.inner.classList.add('scrolldown');
+					this.inner.style.animationDuration = duration;
+					// this.inner.style.animationPlayState='running'; // running paused
+					this.inner.onanimationend=()=>this[resumeScroll]();
+				}
+
+				stop(n) {
+					return new Promise(resolve=>{
+						this.endState = {
+							digit:n,
+							resolve
+						}
+					});
+				}
+			}
+			return DigitScroller;
+		}
+
+		class DigitScrollerGroup {
+			constructor(digitNum=6) {
+				const factory = DigitScrollerFactory();
+				this.digitScrollers = [...new Array(digitNum).keys()].map(()=>new factory());
+				this.digitNum = digitNum;
+			}
+
+			start(durations) {
+				durations = durations || [...new Array(this.digitNum).fill('100ms')];
+				for(let i=0;i<this.digitNum;i++)
+					this.digitScrollers[i].start(durations[i]);
+			}
+
+			async stop(cheat=null) {
+				cheat = cheat || parseInt(Math.random()*999999);
+				const digits = cheat.toString().split('');
+				if(digits.length<this.digitNum) // 长度不够，前面补0
+					for(let i=0;i<=this.digitNum-digits.length;i++)
+						digits.unshift('0');
+				return Promise.all([...this.digitScrollers.map((scroller,i)=>scroller.stop(digits[i]))]);
+			}
+		}
+
+		window.addEventListener('load',()=>{
+			const cheats = [580125,233445,140526,592701];
+			let n = 0;
+			const digitNum = 6;
+			const digitScrollerGroup = new DigitScrollerGroup(digitNum);
+			$('#draw').onclick = async function() {
+				if(/试试手气/.exec(this.innerText)) {
+					const durations = [...new Array(digitNum).keys()].map(()=>parseInt(Math.random()*100+80)+'ms');
+					digitScrollerGroup.start(durations); // 每个 CSS 动画设置不同的随机 duration
+					this.innerText = '停';
+				} else {
+					this.disabled = true;
+					digitScrollerGroup.stop(n<cheats.length?cheats[n++]:null).then(()=>{
+						this.innerText = '试试手气';
+						this.disabled = false;
+					});
+				}
+			}
+		});
+	</script>
+</body>
+</html>

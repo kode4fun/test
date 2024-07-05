@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>幸运大抽奖 —— requestAnimationFrame 实现</title>
+	<link rel="stylesheet" href="main.css">
+</head>
+<body>
+	<div class="main">
+		<div class="row scroller-container" data-state="stopped">
+		</div>
+		<div class="row" style="margin-top:20px">
+			<button id="draw" class="btnHighlight">试试手气</button>
+		</div>
+	</div>
+	<script type="text/javascript">
+		const $ = (sel)=>document.querySelector(sel);
+		const randDigit = ()=>parseInt(Math.random()*10);
+		function DigitScrollerFactory() {
+			const createBox = Symbol.for('createBox');
+			class DigitScroller {
+				constructor() {
+					this.outer = $('.scroller-container').appendChild(this[createBox]());
+					this.inner = this.outer.querySelector('.box-inner');
+					this.anim_id = null;
+				}
+
+				[createBox]() { // 创建数字 div
+					const outer = document.createElement('DIV');
+					outer.classList.add('box-wrapper');
+					outer.innerHTML = `
+						<div class="box-inner">
+							<div class="digit"></div>
+						</div>
+					`;
+					return outer;
+				}
+
+				start(interval=80) {
+					if(this.anim_id) return; // 正在运行中
+					const self = this;
+					let last_ts=null;
+					(function recursive (ts) {
+							last_ts = (last_ts===null||last_ts===undefined)?ts:last_ts;
+							if(ts - last_ts>interval) { // 控制速度
+								self.inner.querySelector('.digit').innerText = randDigit();
+								last_ts = ts;
+							}
+							self.anim_id = requestAnimationFrame((timestamp)=>recursive(timestamp));
+					})();//立即执行递归
+				}
+
+				async stop(n) {
+					this.anim_id && cancelAnimationFrame(this.anim_id);
+					this.anim_id = null;
+					this.inner.querySelector('.digit').innerText = n;
+				}
+			}
+			return DigitScroller;
+		}
+
+		class DigitScrollerGroup {
+			constructor(digitNum=6) {
+				const factory = DigitScrollerFactory();
+				this.digitScrollers = [...new Array(digitNum).keys()].map(()=>new factory());
+				this.digitNum = digitNum;
+			}
+
+			start(intervals) {
+				intervals = intervals || [...new Array(this.digitNum).fill('80')];
+				for(let i=0;i<this.digitNum;i++)
+					this.digitScrollers[i].start(intervals[i]);
+			}
+
+			async stop(cheat=null) {
+				cheat = cheat || parseInt(Math.random()*999999);
+				const digits = cheat.toString().split('');
+				if(digits.length<this.digitNum) // 长度不够，前面补0
+					for(let i=0;i<=this.digitNum-digits.length;i++)
+						digits.unshift('0');
+				return Promise.all([...this.digitScrollers.map((scroller,i)=>scroller.stop(digits[i]))]);
+			}
+		}
+
+		window.addEventListener('load',()=>{
+			const cheats = [580125,233445,140526,592701];
+			let n = 0;
+			const digitNum = 6;
+			const digitScrollerGroup = new DigitScrollerGroup(digitNum);
+			$('#draw').onclick = async function() {
+				if(/试试手气/.exec(this.innerText)) {
+					const intervals = [...new Array(digitNum).keys()].map(()=>parseInt(Math.random()*30+20));
+					digitScrollerGroup.start(intervals); // 每个 CSS 动画设置不同的随机 interval
+					this.innerText = '停';
+				} else {
+					this.disabled = true;
+					digitScrollerGroup.stop(n<cheats.length?cheats[n++]:null).then(()=>{
+						this.innerText = '试试手气';
+						this.disabled = false;
+					});
+				}
+			}
+		});
+	</script>
+</body>
+</html>
